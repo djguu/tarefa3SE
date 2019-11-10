@@ -1,4 +1,5 @@
-import csv, math, haversine, xlsxwriter
+import csv, math, xlsxwriter
+from haversine import haversine
 
 data = []
 line_count = 0
@@ -18,6 +19,14 @@ def getCsvData(file, fields):
             line_count += 1
         print(f'Processed {line_count} lines.')
         return csv_reader
+
+
+def distanceCalc(pos1, pos2):
+    return round(haversine(pos1, pos2), 3)
+
+
+def timeCalc(time1, time2):
+    return (time2 - time1).total_seconds()
 
 
 def csvToXls(csvDict):
