@@ -123,4 +123,5 @@ dmypy.json
 .pyre/
 
 data.xlsx
-.idea
+.idea/*
+.idea/
