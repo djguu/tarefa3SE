@@ -125,3 +125,6 @@ dmypy.json
 data.xlsx
 .idea/*
 .idea/
+teste/*
+downloads/*
+xls/*

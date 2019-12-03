@@ -1,13 +1,12 @@
 import os
 import csv
 import re
-from flask import Blueprint, jsonify, request, current_app as app
 import xlsxwriter
+from flask import Blueprint, jsonify, request
 from haversine import haversine, Unit
 from pathlib import Path
 from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
-from werkzeug.exceptions import HTTPException
 
 api = Blueprint('api', __name__, template_folder='templates')
 
@@ -20,39 +19,57 @@ UPLOAD_FOLDER = 'downloads'
 ALLOWED_EXTENSIONS = {'txt', 'csv', 'xlsx', 'xls'}
 
 
-@api.route("/csv", methods=['GET'])
+@api.route("/csv", methods=['GET','POST'])
 def main():
     global data
-    file, fields, start_data, isValid = getParams()
-    # file = '20081026094426.csv'
-    # fields = ["Latitude", "Longitude", "N", "Altitude", "Date_nDays", "Data", "Hora", "Distancia (m)", "Tempo (s)",
-    #           "Vel. deslocação m/s", "Vel. deslocação km/h", "Meio Transporte"]
-    xls = 'data.xlsx'
-    if(isValid):
-        dados = getCsvData(file, fields, start_data)
-        dataProcess()
-        csvToXls(dados, xls)
-    else:
-        return 'Error with a field'
+    data = []
+    if request.method == 'POST':
+        filename, file_path, fields, start_data, fields_valid = getParams()
+        xls = filename + '.xlsx'
 
-    if len(data) > 0:
-        return jsonify(
-            {'ok': True, 'data': data, "count": len(data), "total distance": total_distance,
-             "total time": total_time}), 200
-    else:
-        return jsonify({'ok': False, 'message': 'No points found'}), 400
+        if fields_valid:
+            dados = getCsvData(file_path, fields, start_data)
+            dataProcess()
+            csvToXls(dados, xls)
+            if len(data) > 0:
+                return jsonify(
+                    {'ok': True, 'data': data, "count": len(data), "total distance": total_distance,
+                     "total time": total_time}), 200
+            else:
+                return jsonify({'ok': False, 'message': 'No points found'}), 400
+        else:
+            return 'Error with a field'
+
+    return '''
+    <html>
+   <body>
+      <form action = "" method = "POST" 
+         enctype = "multipart/form-data">
+         Ficheiro:
+         <input type = "file" name = "file" /><br/>
+         Parametros: 
+         <input type = "text" name = "fields"  size="150"/><br/>
+         Linha em que inicia os dados: 
+         <input type = "number" name = "start_data" /><br/>
+         <input type = "submit"/>
+      </form>
+   </body>
+</html>
+    '''
 
 
 def getParams():
-    isValid = False
+    fields_valid = False
     path = ''
     full_path = ''
-
+    filename = ''
     if 'file' not in request.files:
         file = None
     else:
         file = request.files['file']
         path = Path(__file__).parent.parent.joinpath(UPLOAD_FOLDER)
+        if not path.exists():
+            path.mkdir(parents=True, exist_ok=False)
 
     if file and allowed_file(file.filename):
         filename = secure_filename(file.filename)
@@ -65,30 +82,15 @@ def getParams():
     elif start_data is not None:
         start_data = int(start_data)
 
-    if file is not None and start_data is not None: # and latitude is not None and longitude is not None and date is not None and time is not None:
-        isValid = True
+    if file is not None and start_data is not None:
+        fields_valid = True
 
-    get_fields = request.form.get('fields')                 # get fields from request
+    # get fields from request
+    get_fields = request.form.get('fields')
 
     fields = fieldsToArray(get_fields)
 
-    return full_path, fields, start_data, isValid
-
-
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
-def fieldsToArray(fields):
-    parts = re.split(r"""("[^"]*"|'[^']*')""", fields)
-    parts[::2] = map(lambda s: "".join(s.split()), parts[::2])  # removes possible spaces outside quotes
-    str1 = ("".join(parts))
-    str2 = str1.replace(']', '').replace('[', '')               # remove square brackets in case there are
-    str3 = str2.replace('"', '').replace("'", "")               # remove quotes in case there are
-    fields = str3.split(",")                                    # splits into array
-    fields = [x.lower() for x in fields]
-    return fields
+    return filename, full_path, fields, start_data, fields_valid
 
 
 def getCsvData(file, fields, start_data):
@@ -101,16 +103,7 @@ def getCsvData(file, fields, start_data):
             if line_count >= start_data - 1:
                 data.append(row)
             line_count += 1
-        # df = pd.DataFrame(csv_reader)
         return csv_reader
-
-
-def distanceCalc(pos1, pos2):
-    return round(haversine(pos1, pos2, unit=Unit.METERS), 3)
-
-
-def timeCalc(time1, time2):
-    return (time2 - time1).total_seconds()
 
 
 def dataProcess():
@@ -123,7 +116,7 @@ def dataProcess():
             if float(row["altitude"]) <= 0:
                 row['altitude'] = -777
 
-        if row["tempo (s)"] is None:
+        if row["tempo (s)"] is None and row['data'] is not None and row['hora'] is not None:
             if pos - 1 >= 0:
                 last_row = data[pos - 1]
 
@@ -149,15 +142,15 @@ def dataProcess():
             else:
                 row["distancia (m)"] = 0
 
-        if row["vel. deslocação m/s"] is None:
+        if row["vel. deslocação m/s"] is None and row["tempo (s)"] is not None:
             try:
                 row["vel. deslocação m/s"] = round(distancia / float(row["tempo (s)"]), 3)
                 row["vel. deslocação km/h"] = round(float(row["vel. deslocação m/s"]) * 3.6, 3)
-            except:
+            except ZeroDivisionError:
                 row["vel. deslocação m/s"] = 0.0
                 row["vel. deslocação km/h"] = 0.0
 
-        if row["meio transporte"] is None:
+        if row["meio transporte"] is None and row["vel. deslocação m/s"] is not None:
             vel = row["vel. deslocação m/s"]
 
             if vel == 0.0:
@@ -180,7 +173,13 @@ def dataProcess():
 
 def csvToXls(csv_dict, xls):
     global total_time, total_distance
-    workbook = xlsxwriter.Workbook(xls)
+
+    name_xls = Path(__file__).parent.parent.joinpath('xls')
+
+    if not name_xls.exists():
+        name_xls.mkdir(parents=True, exist_ok=False)
+
+    workbook = xlsxwriter.Workbook(name_xls.joinpath(xls))
     worksheet = workbook.add_worksheet('Dados')
 
     worksheet.set_column('A:L', 20)
@@ -209,3 +208,49 @@ def csvToXls(csv_dict, xls):
         row += 1
 
     workbook.close()
+
+
+def distanceCalc(pos1, pos2):
+    return round(haversine(pos1, pos2, unit=Unit.METERS), 3)
+
+
+def timeCalc(time1, time2):
+    return (time2 - time1).total_seconds()
+
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def fieldsToArray(fields):
+    parts = re.split(r"""("[^"]*"|'[^']*')""", fields)
+    parts[::2] = map(lambda s: "".join(s.split()), parts[::2])  # removes possible spaces outside quotes
+    str1 = ("".join(parts))
+    str2 = str1.replace(']', '').replace('[', '')  # remove square brackets in case there are
+    str3 = str2.replace('"', '').replace("'", "")  # remove quotes in case there are
+    fields = str3.split(",")  # splits into array
+    fields = [x.lower() for x in fields]
+
+    if 'altitude' not in fields:
+        fields.append('altitude')
+
+    if 'tempo (s)' not in fields:
+        fields.append('tempo (s)')
+
+    if 'distancia (m)' not in fields:
+        fields.append('distancia (m)')
+
+    if 'vel. deslocação m/s' not in fields:
+        fields.append('vel. deslocação m/s')
+
+    if 'meio transporte' not in fields:
+        fields.append('meio transporte')
+
+    if 'data' not in fields:
+        fields.append('data')
+
+    if 'hora' not in fields:
+        fields.append('hora')
+
+    return fields
