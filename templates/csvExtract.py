@@ -31,7 +31,7 @@ def main():
     if(isValid):
         dados = getCsvData(file, fields, start_data)
         dataProcess()
-       # csvToXls(dados, xls)
+        csvToXls(dados, xls)
     else:
         return 'Error with a field'
 
@@ -86,7 +86,9 @@ def fieldsToArray(fields):
     str1 = ("".join(parts))
     str2 = str1.replace(']', '').replace('[', '')               # remove square brackets in case there are
     str3 = str2.replace('"', '').replace("'", "")               # remove quotes in case there are
-    return str3.split(",")                                      # splits into array
+    fields = str3.split(",")                                    # splits into array
+    fields = [x.lower() for x in fields]
+    return fields
 
 
 def getCsvData(file, fields, start_data):
@@ -97,7 +99,6 @@ def getCsvData(file, fields, start_data):
         line_count = 0
         for row in csv_reader:
             if line_count >= start_data - 1:
-                row = lower_dict(row)
                 data.append(row)
             line_count += 1
         # df = pd.DataFrame(csv_reader)
@@ -110,11 +111,6 @@ def distanceCalc(pos1, pos2):
 
 def timeCalc(time1, time2):
     return (time2 - time1).total_seconds()
-
-
-def lower_dict(d):
-    new_dict = dict((k.lower(), v) for k, v in d.items())
-    return new_dict
 
 
 def dataProcess():
