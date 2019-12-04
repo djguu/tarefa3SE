@@ -5,3 +5,7 @@
 * ``pip install haversine``
 
 * ``pip install XlsxWriter``
+
+## Iniciar com:
+
+* ``python app.py``
