@@ -2,7 +2,7 @@ import os
 import csv
 import re
 import xlsxwriter
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_from_directory, abort
 from haversine import haversine, Unit
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -18,7 +18,7 @@ total_time = 0.0
 UPLOAD_FOLDER = 'downloads'
 ALLOWED_EXTENSIONS = {'txt', 'csv', 'xlsx', 'xls'}
 
-
+# FUNCAO MAIN, TRATA APENAS DE EXECUTAR AS OUTRAS FUNCOES
 @api.route("/csv", methods=['GET','POST'])
 def main():
     global data
@@ -31,12 +31,19 @@ def main():
             dados = getCsvData(file_path, fields, start_data)
             dataProcess()
             csvToXls(dados, xls)
-            if len(data) > 0:
-                return jsonify(
-                    {'ok': True, 'data': data, "count": len(data), "total distance": total_distance,
-                     "total time": total_time}), 200
-            else:
-                return jsonify({'ok': False, 'message': 'No points found'}), 400
+            try:
+                return send_from_directory(Path(__file__).parent.parent.joinpath('xls'), filename=xls, as_attachment=True)
+            except FileNotFoundError:
+                abort(404)
+
+            # SE QUISER VER EM JSON O RESULTADO
+
+            # if len(data) > 0:
+            #     return jsonify(
+            #         {'ok': True, 'data': data, "count": len(data), "total distance": total_distance,
+            #          "total time": total_time}), 200
+            # else:
+            #     return jsonify({'ok': False, 'message': 'No points found'}), 400
         else:
             return 'Error with a field'
 
@@ -58,6 +65,7 @@ def main():
     '''
 
 
+# VAI BUSCAR OS PARAMETROS DO FORMULARIO
 def getParams():
     fields_valid = False
     path = ''
@@ -93,6 +101,7 @@ def getParams():
     return filename, full_path, fields, start_data, fields_valid
 
 
+# COM BASE NOS PARAMETROS, VAI BUSCAR AO FICHEIRO OS DADOS
 def getCsvData(file, fields, start_data):
     with open(file, mode='r') as csv_file:
         global line_count, data
@@ -106,6 +115,7 @@ def getCsvData(file, fields, start_data):
         return csv_reader
 
 
+# PROCESSA E CALCULA CERTOS VALORES NECESSARIOS
 def dataProcess():
     global data, total_distance, total_time
     pos = 0
@@ -171,6 +181,7 @@ def dataProcess():
         pos += 1
 
 
+# TRANSFORMA O FICHEIRO CSV EM XLS
 def csvToXls(csv_dict, xls):
     global total_time, total_distance
 
@@ -210,19 +221,23 @@ def csvToXls(csv_dict, xls):
     workbook.close()
 
 
+# CALCULA DISTANCIA ENTRE 2 PONTOS GPS
 def distanceCalc(pos1, pos2):
     return round(haversine(pos1, pos2, unit=Unit.METERS), 3)
 
 
+# CALCULA O TEMPO ENTRE 2 PONTOS
 def timeCalc(time1, time2):
     return (time2 - time1).total_seconds()
 
 
+# VERIFICA SE O FICHEIRO É PERMITIDO
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+# PEGA NA STRING FIELDS DO FORMULARIO E TORNA ELA NUM ARRAY, ADICIONANDO CAMPOS EM FALTA
 def fieldsToArray(fields):
     parts = re.split(r"""("[^"]*"|'[^']*')""", fields)
     parts[::2] = map(lambda s: "".join(s.split()), parts[::2])  # removes possible spaces outside quotes
